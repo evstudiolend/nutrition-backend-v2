@@ -16,6 +16,24 @@ app.use(cors({
   allowedHeaders: ['Content-Type']
 }));
 app.use(express.json());
+// Простой маршрут для проверки, что бекенд жив
+app.get('/', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// Дополнительные варианты на случай, если фронт ждёт /health или /v1/health
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.get('/v1/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 
 // =============== ДАННЫЕ ===============
 
