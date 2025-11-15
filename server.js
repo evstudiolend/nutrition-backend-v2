@@ -386,6 +386,8 @@ app.post('/api/ai/chat', async (req, res) => {
 Настроение пользователя по шкале 1–5: ${mood || 'не указано'}.
 
 Сгенерируй ответ в формате, описанном в system prompt.
+Строго соблюдай JSON-структуру: обязательно указывай граммовки и единицы измерения в поле "ingredients"
+и заполняй "ingredients_structured" для каждого рецепта (масса в граммах).
 Если уместно — предложи 1–3 рецепта, которые подходят под цель и запрос.
 `;
 
@@ -448,18 +450,24 @@ app.post('/api/ai/rotate', async (req, res) => {
 
 Верни JSON:
 {
-  "message": "краткое объяснение",
+  "message": "...",
   "recipes": [
     {
       "title": "...",
       "explanation": "...",
-      "kcal": 400,
-      "protein": 30,
-      "fat": 12,
-      "carbs": 35
+      "kcal": 450,
+      "protein": 25,
+      "fat": 15,
+      "carbs": 40,
+      "ingredients": ["ингредиент — количество и единица измерения"],
+      "steps": ["..."],
+      "ingredients_structured": [
+        { "name": "название продукта", "amount": 100 }
+      ]
     }
   ]
 }
+Обязательно заполняй ingredients_structured и указывай граммовки в ingredients.
 `;
 
     const raw = await askOpenAI(BASE_SYSTEM_PROMPT, userPrompt);
@@ -563,6 +571,8 @@ app.post('/api/search/pantry', async (req, res) => {
 Цель КБЖУ: ${kbjuTarget ? JSON.stringify(kbjuTarget) : 'не указана'}
 
 Сгенерируй 2–4 блюда из этих продуктов.
+Каждый рецепт должен соответствовать формату из system prompt: 
+ингредиенты с граммовками в "ingredients" и структурированный список в "ingredients_structured" (масса в граммах).
 Верни JSON формата (message + recipes[])
 `;
 
