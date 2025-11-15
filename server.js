@@ -11,10 +11,39 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Загружаем базу продуктов
-const FOOD_DB = JSON.parse(
+// Загружаем базу продуктов и строим словарь по всем названиям и синонимам
+const rawFood = JSON.parse(
   fs.readFileSync(path.join(__dirname, 'database.json'), 'utf8')
 );
+
+// rawFood ожидается как массив объектов с полями key, key_en, base, synonyms
+const FOOD_DB = {};
+
+if (Array.isArray(rawFood)) {
+  for (const item of rawFood) {
+    if (!item || !item.base) continue;
+    const nutri = item.base;
+
+    const names = [];
+    if (item.key) names.push(item.key);
+    if (item.key_en) names.push(item.key_en);
+    if (Array.isArray(item.synonyms)) names.push(...item.synonyms);
+
+    for (const n of names) {
+      const norm = String(n).trim().toLowerCase();
+      if (!norm) continue;
+      // если вдруг дубликат — последний просто перезапишет
+      FOOD_DB[norm] = {
+        kcal: nutri.kcal,
+        protein: nutri.protein,
+        fat: nutri.fat,
+        carbs: nutri.carbs
+      };
+    }
+  }
+} else {
+  console.warn('database.json не массив — проверь формат');
+}
 
 // Middleware
 app.use(cors({
