@@ -4,10 +4,17 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Загружаем базу продуктов
+const FOOD_DB = JSON.parse(
+  fs.readFileSync(path.join(__dirname, 'database.json'), 'utf8')
+);
 
 // Middleware
 app.use(cors({
@@ -269,13 +276,44 @@ const BASE_SYSTEM_PROMPT = `
       "fat": 12,
       "carbs": 30,
       "ingredients": ["...", "..."],
-      "steps": ["Шаг 1 ...", "Шаг 2 ..."]
+      "steps": ["Шаг 1 ...", "Шаг 2 ..."],
+      "ingredients_structured": [
+        { "name": "куриная грудка", "amount": 200 }
+      ]
     }
   ]
 }
 Если пользователь хочет просто совет/план без рецептов — массив recipes может быть пустым.
 Отвечай ТОЛЬКО строгим JSON по этому формату без комментариев.
 `;
+
+
+// -------------------- КБЖУ ENGINE --------------------
+
+function calculateNutrition(ingredients) {
+  let total = { kcal: 0, protein: 0, fat: 0, carbs: 0 };
+
+  for (const ing of ingredients) {
+    const name = ing.name.toLowerCase();
+    const amount = ing.amount; // в граммах
+
+    if (!FOOD_DB[name]) continue;
+
+    const per100 = FOOD_DB[name];
+
+    total.kcal    += per100.kcal    * amount / 100;
+    total.protein += per100.protein * amount / 100;
+    total.fat     += per100.fat     * amount / 100;
+    total.carbs   += per100.carbs   * amount / 100;
+  }
+
+  return {
+    kcal: Math.round(total.kcal),
+    protein: Math.round(total.protein),
+    fat: Math.round(total.fat),
+    carbs: Math.round(total.carbs)
+  };
+}
 
 
 // =============== API ENDPOINTS ===============
@@ -341,6 +379,16 @@ app.post('/api/ai/chat', async (req, res) => {
         message: raw,
         recipes: []
       };
+    }
+
+    // Авто-КБЖУ для AI рецептов
+    if (parsed.recipes && Array.isArray(parsed.recipes)) {
+      parsed.recipes = parsed.recipes.map(r => {
+        if (r.ingredients_structured) {
+          r.kbju = calculateNutrition(r.ingredients_structured);
+        }
+        return r;
+      });
     }
 
     res.json({
