@@ -215,6 +215,68 @@ const RECIPES = [
     flavor_profile: ["fresh", "savory"]
   }
 ];
+// =============== AI HELPERS ===============
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+async function askOpenAI(systemPrompt, userMessage) {
+  if (!OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY не задан в переменных окружения');
+  }
+
+  const response = await axios.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      model: 'gpt-4o-mini', // можно заменить на gpt-3.5-turbo, если так дешевле
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ],
+      temperature: 0.7
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  return response.data.choices[0].message.content;
+}
+
+const BASE_SYSTEM_PROMPT = `
+Ты — умный ассистент по здоровому питанию и планированию рациона.
+Твоя задача — ПРИДУМЫВАТЬ РЕЦЕПТЫ И РАЦИОНЫ С НУЛЯ под запрос пользователя,
+а не выбирать из заранее заданного списка.
+
+Всегда учитывай:
+- ингредиенты, которые называет пользователь;
+- ограничения по времени приготовления;
+- желаемую калорийность и КБЖУ, если они указаны;
+- цель (снижение веса, поддержание, набор);
+- контекст (офис, дом, мало времени, усталость, стресс).
+
+Формат базового ответа в JSON (без пояснительного текста вокруг):
+{
+  "message": "краткое резюме в 1–3 предложениях для пользователя",
+  "recipes": [
+    {
+      "title": "Название блюда",
+      "explanation": "Почему этот рецепт подходит под запрос, кратко",
+      "kcal": 350,
+      "protein": 25,
+      "fat": 12,
+      "carbs": 30,
+      "ingredients": ["...", "..."],
+      "steps": ["Шаг 1 ...", "Шаг 2 ..."]
+    }
+  ]
+}
+Если пользователь хочет просто совет/план без рецептов — массив recipes может быть пустым.
+Отвечай ТОЛЬКО строгим JSON по этому формату без комментариев.
+`;
+
 
 // =============== API ENDPOINTS ===============
 
@@ -253,231 +315,248 @@ app.get('/api/recipes/:id', (req, res) => {
   res.json(recipe);
 });
 
-// AI Chat - анализ запроса и подбор рецептов
+// AI Chat - генерация ответов и рецептов с нуля
 app.post('/api/ai/chat', async (req, res) => {
   try {
-    const { message, userKBJU } = req.body;
-    
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(400).json({ error: 'API key not configured' });
+    const { message, userKBJU, mood } = req.body;
+
+    const userPrompt = `
+Запрос пользователя: """${message || ''}"""
+
+Цель по КБЖУ (если есть): ${userKBJU ? JSON.stringify(userKBJU) : 'не указана'}.
+Настроение пользователя по шкале 1–5: ${mood || 'не указано'}.
+
+Сгенерируй ответ в формате, описанном в system prompt.
+Если уместно — предложи 1–3 рецепта, которые подходят под цель и запрос.
+`;
+
+    const raw = await askOpenAI(BASE_SYSTEM_PROMPT, userPrompt);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      // Если модель вернула невалидный JSON — оборачиваем как текст
+      parsed = {
+        message: raw,
+        recipes: []
+      };
     }
-    
-    // Промпт для анализа запроса
-    const systemPrompt = `Ты помощник по выбору рецептов здорового питания. 
-Твоя задача - анализировать запрос пользователя и вернуть JSON с параметрами поиска.
-Верни ответ ТОЛЬКО в виде JSON без дополнительного текста.
-Поля: { max_time: число или null, tags: [], cuisine: строка или null, mood: строка или null }`;
-    
-    // Вызов OpenAI API
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: message }
-        ],
-        temperature: 0.7,
-        max_tokens: 200
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    const aiAnalysis = JSON.parse(response.data.choices[0].message.content);
-    
-    // Фильтруем рецепты по результатам AI анализа
-    let filteredRecipes = RECIPES;
-    
-    if (aiAnalysis.max_time) {
-      filteredRecipes = filteredRecipes.filter(r => r.cook_time <= aiAnalysis.max_time);
-    }
-    if (aiAnalysis.tags && aiAnalysis.tags.length > 0) {
-      filteredRecipes = filteredRecipes.filter(r => 
-        aiAnalysis.tags.some(tag => r.tags.includes(tag))
-      );
-    }
-    if (aiAnalysis.cuisine) {
-      filteredRecipes = filteredRecipes.filter(r => r.cuisine === aiAnalysis.cuisine);
-    }
-    
-    // Если ничего не нашли, вернём популярные
-    if (filteredRecipes.length === 0) {
-      filteredRecipes = RECIPES.slice(0, 3);
-    } else {
-      filteredRecipes = filteredRecipes.slice(0, 3);
-    }
-    
+
     res.json({
-      analysis: aiAnalysis,
-      recipes: filteredRecipes,
-      message: `Вот ${filteredRecipes.length} вариантов для вас!`
+      ok: true,
+      source: 'ai',
+      // это поле использует фронт в чат-истории
+      message: parsed.message || 'Вот что я могу предложить:',
+      // это поле использует renderAIRecipeResults
+      recipes: Array.isArray(parsed.recipes) ? parsed.recipes : []
     });
-    
   } catch (error) {
-    console.error('AI Error:', error.message);
-    res.status(500).json({ 
-      error: 'AI service error',
-      message: error.message,
-      recipes: RECIPES.slice(0, 3) // Fallback
+    console.error('AI /chat error:', error.message);
+    res.status(503).json({
+      ok: false,
+      source: 'fallback',
+      error: 'Сервис AI временно недоступен, попробуйте позже.'
     });
   }
 });
 
-// Smart rotation - предложить похожий рецепт
+
+// Smart rotation - "Надоело, предложи похожее" (AI)
 app.post('/api/ai/rotate', async (req, res) => {
   try {
-    const { recipeId } = req.body;
-    const currentRecipe = RECIPES.find(r => r.id === recipeId);
-    
-    if (!currentRecipe) {
-      return res.status(404).json({ error: 'Recipe not found' });
+    const { recipeId, recipeName, kbju, category } = req.body;
+
+    const userPrompt = `
+Пользователь смотрит рецепт "${recipeName || 'без названия'}".
+КБЖУ текущего блюда: ${kbju ? JSON.stringify(kbju) : 'не указано'}.
+Категория: ${category || 'не указана'}.
+
+Ему надоело это блюдо, предложи 2–3 альтернативы:
+- примерно схожей калорийности и КБЖУ
+- разные ингредиенты / кухня
+- но достойные замены
+
+Верни JSON:
+{
+  "message": "краткое объяснение",
+  "recipes": [
+    {
+      "title": "...",
+      "explanation": "...",
+      "kcal": 400,
+      "protein": 30,
+      "fat": 12,
+      "carbs": 35
     }
-    
-    if (!process.env.OPENAI_API_KEY) {
-      // Fallback: просто вернём случайный похожий рецепт
-      const similar = RECIPES.filter(r => 
-        r.id !== recipeId && 
-        Math.abs(r.kbju.kcal - currentRecipe.kbju.kcal) < 50 &&
-        r.cuisine !== currentRecipe.cuisine
-      );
-      return res.json({
-        alternatives: similar.slice(0, 2),
-        message: 'Вот похожие по КБЖУ, но другие рецепты'
-      });
-    }
-    
-    // С использованием AI
-    const prompt = `Дан рецепт: "${currentRecipe.title}" (${currentRecipe.kbju.kcal} ккал, ${currentRecipe.cuisine} кухня, вкусовой профиль: ${currentRecipe.flavor_profile.join(', ')}).
-Найди в списке 2 рецепта с похожей КБЖУ (±10%), но другой кухней и вкусом. 
-Верни JSON: { recipeTitles: ["название1", "название2"] }`;
-    
-    const aiResponse = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: 'Ты помощник по подбору рецептов. Верни ТОЛЬКО JSON без дополнительного текста.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 150
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
+  ]
+}
+`;
+
+    const raw = await askOpenAI(BASE_SYSTEM_PROMPT, userPrompt);
+
+    let parsed;
+    try { parsed = JSON.parse(raw); } 
+    catch { parsed = { message: raw, recipes: [] }; }
+
+    const alternatives = (parsed.recipes || []).map((r, index) => ({
+      id: recipeId + index + 1,
+      title: r.title,
+      explanation: r.explanation,
+      kbju: {
+        kcal: r.kcal,
+        protein: r.protein,
+        fat: r.fat,
+        carbs: r.carbs
       }
-    );
-    
-    const alternatives = RECIPES.filter(r => 
-      r.id !== recipeId && 
-      Math.abs(r.kbju.kcal - currentRecipe.kbju.kcal) < 50 &&
-      r.cuisine !== currentRecipe.cuisine
-    ).slice(0, 2);
-    
+    }));
+
     res.json({
-      alternatives,
-      message: 'Вот похожие по КБЖУ, но другие рецепты, чтобы не надоело!'
+      ok: true,
+      source: 'ai',
+      message: parsed.message,
+      alternatives
     });
-    
+
   } catch (error) {
-    console.error('Rotate Error:', error.message);
-    
-    // Fallback
-    const currentRecipe = RECIPES.find(r => r.id === req.body.recipeId);
-    const alternatives = RECIPES.filter(r => 
-      r.id !== req.body.recipeId && 
-      Math.abs(r.kbju.kcal - currentRecipe.kbju.kcal) < 50 &&
-      r.cuisine !== currentRecipe.cuisine
-    ).slice(0, 2);
-    
-    res.json({ alternatives, message: 'Вот похожие рецепты' });
+    console.error('AI rotate error:', error);
+    res.status(503).json({
+      ok: false,
+      source: 'fallback',
+      alternatives: []
+    });
   }
 });
 
-// Быстро сейчас (≤10 мин)
-app.get('/api/quick', (req, res) => {
-  const quick = RECIPES.filter(r => r.cook_time <= 10 && r.office_friendly).slice(0, 5);
-  res.json(quick);
-});
 
-// Подбор под КБЖУ
-app.post('/api/match/kbju', (req, res) => {
-  const { targetKcal } = req.body;
-  
-  if (!targetKcal) {
-    return res.status(400).json({ error: 'targetKcal required' });
-  }
-  
-  const tolerance = targetKcal * 0.15; // ±15%
-  const matched = RECIPES.filter(r => 
-    r.kbju.kcal >= targetKcal - tolerance && 
-    r.kbju.kcal <= targetKcal + tolerance
-  );
-  
-  res.json({
-    target: targetKcal,
-    matched: matched.slice(0, 5),
-    count: matched.length
-  });
-});
+// Подбор под КБЖУ — AI-логика
+app.post('/api/match/kbju', async (req, res) => {
+  try {
+    const { targetKcal, mealsCount } = req.body;
 
-// Поиск рецептов по ингредиентам
-app.post('/api/search/pantry', (req, res) => {
-  const { ingredients } = req.body;
-  
-  if (!ingredients || !Array.isArray(ingredients)) {
-    return res.status(400).json({ error: 'ingredients array required' });
-  }
-  
-  const results = RECIPES.map(recipe => {
-    const matchCount = ingredients.filter(ing => 
-      recipe.ingredients.some(recIng => recIng.toLowerCase().includes(ing.toLowerCase()))
-    ).length;
-    
-    return {
-      ...recipe,
-      matchScore: matchCount
-    };
-  }).filter(r => r.matchScore > 0).sort((a, b) => b.matchScore - a.matchScore).slice(0, 5);
-  
-  res.json(results);
-});
-
-// SOS - антистресс
-app.get('/api/sos', (req, res) => {
-  const breathingExercises = [
-    {
-      name: "Дыхание квадратом",
-      instruction: "Вдох 4 сек → Задержка 4 сек → Выдох 4 сек → Задержка 4 сек",
-      duration: 60
-    },
-    {
-      name: "4-7-8 дыхание",
-      instruction: "Вдох через нос 4 сек → Задержка 7 сек → Выдох через рот 8 сек",
-      duration: 45
+    if (!targetKcal) {
+      return res.status(400).json({ ok: false, error: 'targetKcal required' });
     }
-  ];
-  
-  const healthySnacks = RECIPES
-    .filter(r => r.kbju.kcal <= 200 && r.cook_time <= 10)
-    .slice(0, 2);
-  
-  res.json({
-    breathing: breathingExercises[0],
-    snacks: healthySnacks,
-    message: "Ты справишься! Вот быстрая помощь.",
-    timer_minutes: 5
-  });
+
+    const userPrompt = `
+Нужно составить рацион под цель ${targetKcal} ккал.
+Количество приёмов пищи: ${mealsCount || 3}.
+
+Верни JSON:
+{
+  "message": "...",
+  "recipes": [
+    {
+      "title": "...",
+      "explanation": "...",
+      "kcal": 450,
+      "protein": 25,
+      "fat": 15,
+      "carbs": 40,
+      "ingredients": ["..."],
+      "steps": ["..."]
+    }
+  ]
+}
+`;
+
+    const raw = await askOpenAI(BASE_SYSTEM_PROMPT, userPrompt);
+    let parsed;
+    try { parsed = JSON.parse(raw); } 
+    catch { parsed = { message: raw, recipes: [] }; }
+
+    res.json({
+      ok: true,
+      source: 'ai',
+      message: parsed.message,
+      recipes: parsed.recipes
+    });
+
+  } catch (error) {
+    console.error('AI /match/kbju error:', error);
+    res.status(503).json({ ok: false, error: 'AI недоступен' });
+  }
 });
 
-// Error handler
+
+// Поиск по ингредиентам — AI "из остатков"
+app.post('/api/search/pantry', async (req, res) => {
+  try {
+    const { ingredients, time_limit, kbjuTarget } = req.body;
+
+    if (!ingredients || ingredients.length === 0) {
+      return res.status(400).json({ ok: false, error: 'ingredients required' });
+    }
+
+    const userPrompt = `
+Ингредиенты: ${ingredients.join(', ')}
+Лимит времени: ${time_limit || 'не указано'}
+Цель КБЖУ: ${kbjuTarget ? JSON.stringify(kbjuTarget) : 'не указана'}
+
+Сгенерируй 2–4 блюда из этих продуктов.
+Верни JSON формата (message + recipes[])
+`;
+
+    const raw = await askOpenAI(BASE_SYSTEM_PROMPT, userPrompt);
+
+    let parsed;
+    try { parsed = JSON.parse(raw); } 
+    catch { parsed = { message: raw, recipes: [] }; }
+
+    res.json({
+      ok: true,
+      source: 'ai',
+      message: parsed.message,
+      recipes: parsed.recipes
+    });
+
+  } catch (error) {
+    console.error('AI pantry error:', error);
+    res.status(503).json({ ok: false, error: 'AI недоступен' });
+  }
+});
+
+
+// SOS — AI антистресс
+app.get('/api/sos', async (req, res) => {
+  try {
+    const userPrompt = `
+Сгенерируй SOS-поддержку:
+- дыхательная техника 60-120 секунд
+- 1–2 мягких перекуса
+- сообщение поддержки
+
+Верни JSON:
+{
+  "message": "...",
+  "breathing": { "name": "...", "instruction": "...", "duration_seconds": 60 },
+  "snacks": [{ "title": "...", "explanation": "...", "kcal": 150 }]
+}
+`;
+
+    const raw = await askOpenAI(BASE_SYSTEM_PROMPT, userPrompt);
+
+    let parsed;
+    try { parsed = JSON.parse(raw); } 
+    catch { parsed = { message: raw, breathing: null, snacks: [] }; }
+
+    res.json({
+      ok: true,
+      source: 'ai',
+      message: parsed.message,
+      breathing: parsed.breathing,
+      snacks: parsed.snacks,
+      timer_minutes: parsed.breathing?.duration_seconds
+        ? Math.round(parsed.breathing.duration_seconds / 60)
+        : 5
+    });
+
+  } catch (error) {
+    console.error('AI sos error:', error);
+    res.status(503).json({ ok: false, error: 'AI недоступен' });
+  }
+});
+
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
