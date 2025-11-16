@@ -21,6 +21,27 @@
     "synonyms": ["филе индейки", "индейка грудка", "индейка филе"]
   },
   {
+     "key": "сметана 10%",
+  "key_en": "sour cream 10%",
+  "category": "dairy",
+  "base": { "kcal": 115, "protein": 3.0, "fat": 10.0, "carbs": 3.4 },
+  "synonyms": ["сметана", "сметана низкокалорийная", "сметана нежирная", "sour cream 10"]
+  },
+   {
+     "key": "сметана 15%",
+  "key_en": "sour cream 15%",
+  "category": "dairy",
+  "base": { "kcal": 162, "protein": 2.7, "fat": 15.0, "carbs": 3.2 },
+  "synonyms": ["сметана", "сметана средняя", "sour cream 15"]
+  },
+   {
+     "key": "сметана 20%",
+  "key_en": "sour cream 20%",
+  "category": "dairy",
+  "base": { "kcal": 206, "protein": 2.8, "fat": 20.0, "carbs": 3.2 },
+  "synonyms": ["сметана", "сметана жирная", "сметана классическая", "sour cream 20"]
+  },
+  {
     "key": "говядина постная",
     "key_en": "lean beef",
     "category": "meat",
