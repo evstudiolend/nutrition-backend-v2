@@ -679,25 +679,55 @@ app.post('/api/search/pantry', async (req, res) => {
     }
 
     const userPrompt = `
-Ингредиенты: ${ingredients.join(', ')}
-Лимит времени: ${time_limit || 'не указано'}
-Цель КБЖУ: ${kbjuTarget ? JSON.stringify(kbjuTarget) : 'не указана'}
+У пользователя есть только такие продукты (остатки): 
+${ingredients.join(', ')}
 
-Сгенерируй 2–4 блюда из этих продуктов.
-Каждый рецепт должен соответствовать формату из system prompt: 
-ингредиенты с граммовками в "ingredients" и структурированный список в "ingredients_structured" (масса в граммах).
-Верни JSON формата (message + recipes[])
+Лимит времени: ${time_limit || 'не указан'}.
+Цель по КБЖУ (если есть): ${kbjuTarget ? JSON.stringify(kbjuTarget) : 'не указана'}.
+
+Твоя задача:
+- придумать 2–4 рецепта ТОЛЬКО из этих продуктов,
+- можно добавить только базовые вещи из шкафа: соль, перец, специи, немного растительного масла/соуса,
+- НЕЛЬЗЯ добавлять новые основные продукты (другие виды мяса, круп, овощей, молочки и т.п.), которых нет в списке.
+
+Важно:
+- Старайся использовать максимум указанных продуктов, а не 1–2 из списка.
+- Для каждого рецепта обязательно заполняй "ingredients" с количеством и единицами измерения (г, мл, шт и т.д.).
+- В "ingredients_structured" указывай основные продукты, влияющие на КБЖУ, в граммах (amount — масса в граммах).
+- ОБЯЗАТЕЛЬНО включай туда масла, орехи, семена и другие калорийные добавки, даже если они указаны как "для жарки" или "для заправки".
+- Воду, специи и соль можно не включать, НО масла и соусы с калориями ВСЕГДА включай.
+
+Верни JSON формата:
+{
+  "message": "...",
+  "recipes": [
+    {
+      "title": "...",
+      "explanation": "...",
+      "kcal": 0,
+      "protein": 0,
+      "fat": 0,
+      "carbs": 0,
+      "ingredients": ["... — ...г/мл/шт"],
+      "steps": ["Шаг 1 ...", "Шаг 2 ..."],
+      "ingredients_structured": [
+        { "name": "название продукта", "amount": 100 }
+      ]
+    }
+  ]
+}
 `;
 
     const raw = await askOpenAI(BASE_SYSTEM_PROMPT, userPrompt);
 
-    let parsed;
+        let parsed;
     try { parsed = JSON.parse(raw); } 
     catch { parsed = { message: raw, recipes: [] }; }
 
-    if (parsed.recipes && Array.isArray(parsed.recipes)) {
+    // Авто-КБЖУ для AI-рецептов "из остатков"
+    if (Array.isArray(parsed.recipes)) {
       parsed.recipes = parsed.recipes.map(r => {
-        if (r.ingredients_structured) {
+        if (Array.isArray(r.ingredients_structured)) {
           r.kbju = calculateNutrition(r.ingredients_structured);
         }
         return r;
@@ -707,8 +737,8 @@ app.post('/api/search/pantry', async (req, res) => {
     res.json({
       ok: true,
       source: 'ai',
-      message: parsed.message,
-      recipes: parsed.recipes
+      message: parsed.message || 'Вот, что можно приготовить из ваших остатков:',
+      recipes: Array.isArray(parsed.recipes) ? parsed.recipes : []
     });
 
   } catch (error) {
