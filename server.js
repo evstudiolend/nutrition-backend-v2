@@ -748,6 +748,111 @@ ${ingredients.join(', ')}
     res.status(503).json({ ok: false, error: 'AI недоступен' });
   }
 });
+// Быстро сейчас — AI генерация быстрых рецептов
+app.post('/api/ai/quick', async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ ok: false, error: 'message is required' });
+    }
+
+    const userPrompt = `
+Пользователь хочет быстрое блюдо.
+Его запрос: """${message}"""
+
+Требования:
+- время приготовления максимум 5–10 минут (если пользователь не указал своё время)
+- простые продукты
+- 1 порция (если пользователь не указал другое)
+- придумай рецепт(ы) С НУЛЯ, не используя заранее заданную базу
+- обязательно указывай граммовки в "ingredients"
+- обязательно заполняй "ingredients_structured" (масса в граммах)
+- любые масла, мед, сахар, соусы — обязательно в ingredients_structured с граммами
+
+Верни JSON формата system prompt.
+`;
+
+    const raw = await askOpenAI(BASE_SYSTEM_PROMPT, userPrompt);
+
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { parsed = { message: raw, recipes: [] }; }
+
+    // Пересчитываем КБЖУ строго по базе
+    if (Array.isArray(parsed.recipes)) {
+      parsed.recipes = parsed.recipes.map(r => {
+        if (Array.isArray(r.ingredients_structured)) {
+          r.kbju = calculateNutrition(r.ingredients_structured);
+        }
+        return r;
+      });
+    }
+
+    res.json({
+      ok: true,
+      source: 'ai',
+      message: parsed.message,
+      recipes: parsed.recipes
+    });
+
+  } catch (error) {
+    console.error('AI quick error:', error);
+    res.status(503).json({ ok: false, error: 'AI недоступен' });
+  }
+});
+// Строгий подбор под КБЖУ — AI генерация рецептов под целевую калорийность
+app.post('/api/ai/strict-kbju', async (req, res) => {
+  try {
+    const { targetKcal, message } = req.body;
+
+    if (!targetKcal) {
+      return res.status(400).json({ ok: false, error: 'targetKcal is required' });
+    }
+
+    const userPrompt = `
+Нужно придумать рецепт под цель ${targetKcal} ккал.
+Дополнительные пожелания пользователя: """${message || 'не указаны'}"""
+
+Требования:
+- придумай рецепт с нуля
+- можно 1–3 варианта
+- указывай реальную калорийность, но мы потом пересчитаем всё строго по базе
+- обязательно заполняй ingredients_structured в граммах
+- обязательно указывай масла / соусы / орехи / мед / сахар — они влияют на КБЖУ
+- не добавляй сложные продукты, если пользователь просит простое блюдо
+
+Верни JSON формата system prompt.
+`;
+
+    const raw = await askOpenAI(BASE_SYSTEM_PROMPT, userPrompt);
+
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { parsed = { message: raw, recipes: [] }; }
+
+    // Пересчитываем КБЖУ строго по базе
+    if (Array.isArray(parsed.recipes)) {
+      parsed.recipes = parsed.recipes.map(r => {
+        if (Array.isArray(r.ingredients_structured)) {
+          r.kbju = calculateNutrition(r.ingredients_structured);
+        }
+        return r;
+      });
+    }
+
+    res.json({
+      ok: true,
+      source: 'ai',
+      message: parsed.message,
+      recipes: parsed.recipes
+    });
+
+  } catch (error) {
+    console.error('AI strict-kbju error:', error);
+    res.status(503).json({ ok: false, error: 'AI недоступен' });
+  }
+});
 
 
 // SOS — AI антистресс
