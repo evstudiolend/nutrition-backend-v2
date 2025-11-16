@@ -11,38 +11,16 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Загружаем базу продуктов и строим словарь по всем названиям и синонимам
-const rawFood = JSON.parse(
+// ================== ЗАГРУЗКА БАЗЫ ПРОДУКТОВ ==================
+
+// Теперь просто читаем массив продуктов из JSON.
+// Формат: [{ key, key_en, base: {kcal, protein, fat, carbs}, synonyms?: [...] }, ...]
+const FOOD_DB = JSON.parse(
   fs.readFileSync(path.join(__dirname, 'database.json'), 'utf8')
 );
 
-// rawFood ожидается как массив объектов с полями key, key_en, base, synonyms
-const FOOD_DB = {};
-
-if (Array.isArray(rawFood)) {
-  for (const item of rawFood) {
-    if (!item || !item.base) continue;
-    const nutri = item.base;
-
-    const names = [];
-    if (item.key) names.push(item.key);
-    if (item.key_en) names.push(item.key_en);
-    if (Array.isArray(item.synonyms)) names.push(...item.synonyms);
-
-    for (const n of names) {
-      const norm = String(n).trim().toLowerCase();
-      if (!norm) continue;
-      // если вдруг дубликат — последний просто перезапишет
-      FOOD_DB[norm] = {
-        kcal: nutri.kcal,
-        protein: nutri.protein,
-        fat: nutri.fat,
-        carbs: nutri.carbs
-      };
-    }
-  }
-} else {
-  console.warn('database.json не массив — проверь формат');
+if (!Array.isArray(FOOD_DB)) {
+  console.warn('⚠️  database.json не массив — проверь формат');
 }
 
 // Middleware
@@ -52,6 +30,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type']
 }));
 app.use(express.json());
+
 // Простой маршрут для проверки, что бекенд жив
 app.get('/', (req, res) => {
   res.json({ status: 'ok' });
@@ -251,6 +230,8 @@ const RECIPES = [
     flavor_profile: ["fresh", "savory"]
   }
 ];
+
+
 // =============== AI HELPERS ===============
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -263,7 +244,7 @@ async function askOpenAI(systemPrompt, userMessage) {
   const response = await axios.post(
     'https://api.openai.com/v1/chat/completions',
     {
-      model: 'gpt-4o-mini', // можно заменить на gpt-3.5-turbo, если так дешевле
+      model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
@@ -338,18 +319,101 @@ const BASE_SYSTEM_PROMPT = `
 Отвечай ТОЛЬКО строгим JSON по этому формату без комментариев.
 `;
 
+
 // -------------------- КБЖУ ENGINE --------------------
 
+// Нормализация названий продуктов: убираем скобки, лишние символы, приводим к одному формату
+function normalizeName(raw) {
+  return (raw || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')                // мед / мёд, творог / творожок
+    .replace(/\([^)]*\)/g, '')         // "творог (нежирный)" -> "творог "
+    .replace(/[^a-zа-я0-9\s]/gi, ' ')  // убираем лишние знаки препинания
+    .replace(/\s+/g, ' ')              // сжимаем пробелы
+    .trim();
+}
+
+// Поиск продукта в массиве FOOD_DB по key + synonyms с частичными совпадениями
+function findProductByName(name) {
+  const norm = normalizeName(name);
+  if (!norm || !Array.isArray(FOOD_DB)) return null;
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const item of FOOD_DB) {
+    if (!item || !item.base) continue;
+
+    const keyNorm = normalizeName(item.key || '');
+    const synonyms = Array.isArray(item.synonyms) ? item.synonyms : [];
+
+    // 1) Точное совпадение по key
+    if (keyNorm && keyNorm === norm) {
+      return item;
+    }
+
+    // 2) Точное совпадение по синонимам
+    let exactSynMatch = false;
+    for (const syn of synonyms) {
+      const synNorm = normalizeName(syn);
+      if (synNorm && synNorm === norm) {
+        exactSynMatch = true;
+        break;
+      }
+    }
+    if (exactSynMatch) {
+      return item;
+    }
+
+    // 3) Частичные совпадения
+    let score = 0;
+
+    if (keyNorm && norm.includes(keyNorm) && keyNorm.length > 2) {
+      score = Math.max(score, 0.7);
+    }
+    if (keyNorm && keyNorm.includes(norm) && norm.length > 2) {
+      score = Math.max(score, 0.7);
+    }
+
+    for (const syn of synonyms) {
+      const synNorm = normalizeName(syn);
+      if (!synNorm) continue;
+
+      if (norm.includes(synNorm) && synNorm.length > 2) {
+        score = Math.max(score, 0.6);
+      }
+      if (synNorm.includes(norm) && norm.length > 2) {
+        score = Math.max(score, 0.6);
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = item;
+    }
+  }
+
+  // Берём лучшую догадку, если она хоть немного адекватная
+  if (bestScore >= 0.6) {
+    return bestMatch;
+  }
+
+  return null;
+}
+
+// Пересчёт КБЖУ по базе для списка структурированных ингредиентов
 function calculateNutrition(ingredients) {
   let total = { kcal: 0, protein: 0, fat: 0, carbs: 0 };
 
-  for (const ing of ingredients) {
-    const name = ing.name.toLowerCase();
+  for (const ing of (ingredients || [])) {
+    if (!ing || !ing.name) continue;
+
+    const product = findProductByName(ing.name);
     const amount = ing.amount; // в граммах
 
-    if (!FOOD_DB[name]) continue;
+    if (!product || !amount || !product.base) continue;
 
-    const per100 = FOOD_DB[name];
+    const per100 = product.base;
 
     total.kcal    += per100.kcal    * amount / 100;
     total.protein += per100.protein * amount / 100;
@@ -433,7 +497,7 @@ app.post('/api/ai/chat', async (req, res) => {
       };
     }
 
-    // Авто-КБЖУ для AI рецептов
+    // Авто-КБЖУ для AI рецептов — СТРОГО по базе, а не по фантазиям модели
     if (parsed.recipes && Array.isArray(parsed.recipes)) {
       parsed.recipes = parsed.recipes.map(r => {
         if (r.ingredients_structured) {
@@ -446,9 +510,7 @@ app.post('/api/ai/chat', async (req, res) => {
     res.json({
       ok: true,
       source: 'ai',
-      // это поле использует фронт в чат-истории
       message: parsed.message || 'Вот что я могу предложить:',
-      // это поле использует renderAIRecipeResults
       recipes: Array.isArray(parsed.recipes) ? parsed.recipes : []
     });
   } catch (error) {
@@ -505,17 +567,23 @@ app.post('/api/ai/rotate', async (req, res) => {
     try { parsed = JSON.parse(raw); } 
     catch { parsed = { message: raw, recipes: [] }; }
 
-    const alternatives = (parsed.recipes || []).map((r, index) => ({
-      id: recipeId + index + 1,
-      title: r.title,
-      explanation: r.explanation,
-      kbju: {
-        kcal: r.kcal,
-        protein: r.protein,
-        fat: r.fat,
-        carbs: r.carbs
+    const alternatives = (parsed.recipes || []).map((r, index) => {
+      let kbjuCalc = null;
+      if (r.ingredients_structured) {
+        kbjuCalc = calculateNutrition(r.ingredients_structured);
       }
-    }));
+      return {
+        id: recipeId + index + 1,
+        title: r.title,
+        explanation: r.explanation,
+        kbju: kbjuCalc || {
+          kcal: r.kcal,
+          protein: r.protein,
+          fat: r.fat,
+          carbs: r.carbs
+        }
+      };
+    });
 
     res.json({
       ok: true,
@@ -560,16 +628,29 @@ app.post('/api/match/kbju', async (req, res) => {
       "fat": 15,
       "carbs": 40,
       "ingredients": ["..."],
-      "steps": ["..."]
+      "steps": ["..."],
+      "ingredients_structured": [
+        { "name": "название продукта", "amount": 100 }
+      ]
     }
   ]
 }
+Обязательно заполняй ingredients_structured.
 `;
 
     const raw = await askOpenAI(BASE_SYSTEM_PROMPT, userPrompt);
     let parsed;
     try { parsed = JSON.parse(raw); } 
     catch { parsed = { message: raw, recipes: [] }; }
+
+    if (parsed.recipes && Array.isArray(parsed.recipes)) {
+      parsed.recipes = parsed.recipes.map(r => {
+        if (r.ingredients_structured) {
+          r.kbju = calculateNutrition(r.ingredients_structured);
+        }
+        return r;
+      });
+    }
 
     res.json({
       ok: true,
@@ -610,6 +691,15 @@ app.post('/api/search/pantry', async (req, res) => {
     let parsed;
     try { parsed = JSON.parse(raw); } 
     catch { parsed = { message: raw, recipes: [] }; }
+
+    if (parsed.recipes && Array.isArray(parsed.recipes)) {
+      parsed.recipes = parsed.recipes.map(r => {
+        if (r.ingredients_structured) {
+          r.kbju = calculateNutrition(r.ingredients_structured);
+        }
+        return r;
+      });
+    }
 
     res.json({
       ok: true,
