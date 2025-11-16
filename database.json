@@ -125,14 +125,14 @@
     "base": { "kcal": 110, "protein": 18, "fat": 2, "carbs": 3 },
     "synonyms": ["кальмар очищенный"]
   },
-  {
-    "key": "яйцо куриное",
-    "key_en": "chicken egg",
-    "category": "eggs",
-    "base": { "kcal": 157, "protein": 12.7, "fat": 10.9, "carbs": 0.7 },
-    "synonyms": ["яйца", "яйцо"],
-    "units": { "шт": 50 }
-  },
+ {
+  "key": "яйцо куриное",
+  "key_en": "chicken egg",
+  "category": "eggs",
+  "base": { "kcal": 157, "protein": 12.7, "fat": 10.9, "carbs": 0.7 },
+  "synonyms": ["яйцо", "яйца", "куриное яйцо"],
+  "units": { "шт": 50 }
+},
   {
     "key": "яйцо перепелиное",
     "key_en": "quail egg",
@@ -572,11 +572,12 @@
     "synonyms": ["рисовая мука"]
   },
   {
-    "key": "мука овсяная",
-    "key_en": "oat flour",
-    "category": "flours",
-    "base": { "kcal": 404, "protein": 15, "fat": 9, "carbs": 65 }
-  },
+  "key": "мука овсяная",
+  "key_en": "oat flour",
+  "category": "flours",
+  "base": { "kcal": 404, "protein": 15, "fat": 9, "carbs": 65 },
+  "synonyms": ["овсяная мука"]
+},
   {
     "key": "мука кукурузная",
     "key_en": "corn flour",
@@ -799,12 +800,18 @@
     "category": "dairy",
     "base": { "kcal": 95, "protein": 2.8, "fat": 2.5, "carbs": 15 }
   },
-  {
-    "key": "творог 0%",
-    "key_en": "cottage cheese 0%",
-    "category": "dairy",
-    "base": { "kcal": 72, "protein": 16.5, "fat": 0.3, "carbs": 2 }
-  },
+{
+  "key": "творог 0%",
+  "key_en": "cottage cheese 0%",
+  "category": "dairy",
+  "base": { "kcal": 72, "protein": 16.5, "fat": 0.3, "carbs": 2 },
+  "synonyms": [
+    "творог обезжиренный",
+    "обезжиренный творог",
+    "творог (обезжиренный)",
+    "нежирный творог"
+  ]
+},
   {
     "key": "творог 9%",
     "key_en": "cottage cheese 9%",
