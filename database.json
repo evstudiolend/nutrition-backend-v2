@@ -180,13 +180,17 @@
     "units": { "ст.л.": 15, "ч.л.": 5 }
   },
   {
-    "key": "подсолнечное масло",
-    "key_en": "sunflower oil",
-    "category": "oils",
-    "base": { "kcal": 884, "protein": 0, "fat": 100, "carbs": 0 },
-    "synonyms": ["масло растительное"],
-    "units": { "ст.л.": 15, "ч.л.": 5 }
-  },
+  "key": "подсолнечное масло",
+  "key_en": "sunflower oil",
+  "category": "oils",
+  "base": { "kcal": 884, "protein": 0, "fat": 100, "carbs": 0 },
+  "synonyms": [
+    "масло растительное",
+    "растительное масло",
+    "масло подсолнечное"
+  ],
+  "units": { "ст.л.": 15, "ч.л.": 5 }
+},
   {
     "key": "рис белый",
     "key_en": "white rice",
