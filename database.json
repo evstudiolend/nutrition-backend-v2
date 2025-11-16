@@ -454,6 +454,86 @@
     "synonyms": ["лимоны"],
     "units": { "шт": 100 }
   },
+   {
+     "key": "клубника",
+  "key_en": "strawberry",
+  "category": "fruits",
+  "base": { "kcal": 32, "protein": 0.7, "fat": 0.3, "carbs": 7.7 },
+  "synonyms": [
+    "ягоды клубники",
+    "клубника свежая",
+    "клубника замороженная",
+    "strawberries"
+  ],
+  "units": {}
+  },
+  {
+     "key": "ягоды",
+  "key_en": "berries",
+  "category": "fruits",
+  "base": { "kcal": 52, "protein": 0.7, "fat": 0.3, "carbs": 12.1 },
+  "synonyms": [
+    "ягоды свежие",
+    "ягоды замороженные",
+    "смесь ягод",
+    "лесные ягоды",
+    "berries",
+    "frozen berries"
+  ],
+  "units": {}
+  },
+  {
+  "key": "черника",
+  "key_en": "blueberry",
+  "category": "fruits",
+  "base": { "kcal": 57, "protein": 0.7, "fat": 0.3, "carbs": 14.5 },
+  "synonyms": [
+    "ягоды черники",
+    "черника свежая",
+    "черника замороженная",
+    "blueberries"
+  ],
+  "units": {}
+},
+  {
+  "key": "вишня",
+  "key_en": "cherry",
+  "category": "fruits",
+  "base": { "kcal": 50, "protein": 1.0, "fat": 0.3, "carbs": 12 },
+  "synonyms": [
+    "ягоды вишни",
+    "вишня свежая",
+    "вишня замороженная",
+    "cherries"
+  ],
+  "units": {}
+},
+  {
+  "key": "голубика",
+  "key_en": "bilberry",
+  "category": "fruits",
+  "base": { "kcal": 57, "protein": 0.7, "fat": 0.3, "carbs": 14.5 },
+  "synonyms": [
+    "ягоды голубики",
+    "голубика свежая",
+    "голубика замороженная",
+    "bilberry"
+  ],
+  "units": {}
+},
+  {
+  "key": "смородина черная",
+  "key_en": "black currant",
+  "category": "fruits",
+  "base": { "kcal": 63, "protein": 1.4, "fat": 0.4, "carbs": 15.4 },
+  "synonyms": [
+    "черная смородина",
+    "смородина",
+    "ягоды смородины",
+    "black currant"
+  ],
+  "units": {}
+},
   {
     "key": "шампиньоны",
     "key_en": "champignons",
